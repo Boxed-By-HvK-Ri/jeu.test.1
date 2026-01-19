@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Mini Foot - Ballon au sol</title>
+<title>Mini Foot Réaliste</title>
 <style>
 body { margin:0; overflow:hidden; font-family:sans-serif; }
 #menu { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -14,7 +14,7 @@ color:white; font-size:24px; background:rgba(0,0,0,0.5); padding:5px 10px; borde
 </head>
 <body>
 <div id="menu">
-  <div>Mini Foot</div>
+  <div>Mini Foot Réaliste</div>
   <button id="startBtn">Jouer</button>
 </div>
 <div id="scoreboard" style="display:none;">Équipe A: 0 | Équipe B: 0 | Temps: 0s</div>
@@ -30,6 +30,7 @@ let keys={}, scoreA=0, scoreB=0, time=0, lastTime=Date.now();
 let gameRunning=false;
 let ballVelocity=new THREE.Vector3();
 const terrainSize={width:30, height:50};
+const goalWidth=6, goalHeight=2, goalDepth=1;
 
 // === INIT ===
 function init(){
@@ -61,7 +62,7 @@ function init(){
   const ballGeo=new THREE.SphereGeometry(0.5,32,32);
   const ballMat=new THREE.MeshPhongMaterial({color:0xffffff});
   ball=new THREE.Mesh(ballGeo,ballMat);
-  ball.position.y=0.5; // ballon toujours au sol
+  ball.position.y=0.5;
   scene.add(ball);
 
   // Joueur principal
@@ -87,9 +88,8 @@ function init(){
     teamB.push(enemy);
   }
 
-  // Buts avec filets (simple représentation)
+  // Buts
   const goalMaterial=new THREE.MeshPhongMaterial({color:0xffff00, opacity:0.6, transparent:true});
-  const goalWidth=6, goalHeight=2, goalDepth=1;
   const goalA=new THREE.Mesh(new THREE.BoxGeometry(goalWidth,goalHeight,goalDepth),goalMaterial);
   goalA.position.set(0,goalHeight/2,-terrainSize.height/2);
   scene.add(goalA);
@@ -110,7 +110,10 @@ function init(){
 
 // === FONCTIONS ===
 function moveAI(player){
-  const dir=new THREE.Vector3(ball.position.x-player.position.x,0,ball.position.z-player.position.z);
+  // IA cible le ballon mais avec variation aléatoire pour ne pas tous se coller
+  const offsetX = (Math.random()-0.5)*5; 
+  const offsetZ = (Math.random()-0.5)*5;
+  const dir=new THREE.Vector3(ball.position.x+offsetX-player.position.x,0,ball.position.z+offsetZ-player.position.z);
   dir.clampLength(0,0.05);
   player.position.add(dir);
 }
@@ -143,9 +146,23 @@ function constrainPlayer(player){
   if(player.position.z>halfHeight) player.position.z=halfHeight;
 }
 
+// Tir uniquement si proche du ballon
+function canShoot(player){
+  const dist = player.position.distanceTo(ball.position);
+  return dist<2; // frappe possible seulement à très courte distance
+}
+
 function checkGoal(){
-  if(ball.position.z>terrainSize.height/2-0.5 && Math.abs(ball.position.x)<3){ scoreA++; resetPositions(); }
-  if(ball.position.z<-terrainSize.height/2+0.5 && Math.abs(ball.position.x)<3){ scoreB++; resetPositions(); }
+  // But A
+  if(ball.position.z<-terrainSize.height/2+0.5 && Math.abs(ball.position.x)<goalWidth/2){
+    scoreB++;
+    resetPositions();
+  }
+  // But B
+  if(ball.position.z>terrainSize.height/2-0.5 && Math.abs(ball.position.x)<goalWidth/2){
+    scoreA++;
+    resetPositions();
+  }
   document.getElementById("scoreboard").innerText=`Équipe A: ${scoreA} | Équipe B: ${scoreB} | Temps: ${time}s`;
 }
 
@@ -163,19 +180,32 @@ function animate(){
 
   const now=Date.now(); if(now-lastTime>1000){ time++; lastTime=now; }
 
-  // Déplacement joueur
+  // Déplacement joueur principal
   if(keys['z']) player.position.z-=0.2;
   if(keys['s']) player.position.z+=0.2;
   if(keys['q']) player.position.x-=0.2;
   if(keys['d']) player.position.x+=0.2;
-  if(keys[' ']) ballVelocity.z+=0.3; // frappe au sol
+
+  // Tir seulement si proche
+  if(keys[' '] && canShoot(player)){
+    ballVelocity.z += (player.position.z<ball.position.z ? 0.3 : -0.3);
+    ballVelocity.x += (player.position.x<ball.position.x ? 0.1 : -0.1);
+  }
 
   // Contrainte joueur
   constrainPlayer(player);
 
   // IA
-  teamA.forEach(p=>{moveAI(p); constrainPlayer(p);});
-  teamB.forEach(p=>{moveAI(p); constrainPlayer(p);});
+  teamA.forEach(p=>{
+    moveAI(p);
+    constrainPlayer(p);
+    if(canShoot(p)) ballVelocity.add(new THREE.Vector3(0,0,0.2)); // IA tire si proche
+  });
+  teamB.forEach(p=>{
+    moveAI(p);
+    constrainPlayer(p);
+    if(canShoot(p)) ballVelocity.add(new THREE.Vector3(0,0,-0.2));
+  });
 
   // Collisions
   [...teamA,...teamB,player].forEach(p=>collide(p));
