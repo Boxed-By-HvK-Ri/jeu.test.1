@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Mini Foot</title>
+<title>Mini Foot avec cages</title>
 <style>
 body { margin:0; overflow:hidden; font-family:sans-serif; }
 #menu { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -29,6 +29,7 @@ let teamA=[], teamB=[];
 let keys={}, scoreA=0, scoreB=0, time=0, lastTime=Date.now();
 let gameRunning=false;
 let ballVelocity=new THREE.Vector3();
+const terrainSize={width:30, height:50};
 
 // === INIT ===
 function init(){
@@ -50,7 +51,7 @@ function init(){
 
   // Terrain
   const terrain=new THREE.Mesh(
-    new THREE.PlaneGeometry(30,50),
+    new THREE.PlaneGeometry(terrainSize.width,terrainSize.height),
     new THREE.MeshPhongMaterial({color:0x228B22})
   );
   terrain.rotation.x=-Math.PI/2;
@@ -86,6 +87,25 @@ function init(){
     teamB.push(enemy);
   }
 
+  // Buts avec filets (simple représentation)
+  const goalMaterial=new THREE.MeshPhongMaterial({color:0xffff00, opacity:0.6, transparent:true});
+  const goalWidth=6, goalHeight=2, goalDepth=1;
+  const goalA=new THREE.Mesh(new THREE.BoxGeometry(goalWidth,goalHeight,goalDepth),goalMaterial);
+  goalA.position.set(0,goalHeight/2,-terrainSize.height/2);
+  scene.add(goalA);
+  const goalB=new THREE.Mesh(new THREE.BoxGeometry(goalWidth,goalHeight,goalDepth),goalMaterial);
+  goalB.position.set(0,goalHeight/2,terrainSize.height/2);
+  scene.add(goalB);
+
+  // Murs invisibles (bords terrain)
+  const wallThickness=1, wallHeight=5;
+  const wallMat=new THREE.MeshBasicMaterial({visible:false});
+  // Côtés gauche/droite
+  const wallLeft=new THREE.Mesh(new THREE.BoxGeometry(wallThickness,wallHeight,terrainSize.height),wallMat);
+  wallLeft.position.set(-terrainSize.width/2, wallHeight/2,0); scene.add(wallLeft);
+  const wallRight=new THREE.Mesh(new THREE.BoxGeometry(wallThickness,wallHeight,terrainSize.height),wallMat);
+  wallRight.position.set(terrainSize.width/2, wallHeight/2,0); scene.add(wallRight);
+
   // Event clavier
   document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
   document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
@@ -113,11 +133,16 @@ function moveBall(){
   ball.position.add(ballVelocity);
   ballVelocity.multiplyScalar(0.95);
   if(ball.position.y<0.5){ ball.position.y=0.5; ballVelocity.y=0; }
+
+  // Limites murs invisibles
+  const halfWidth=terrainSize.width/2-0.5;
+  if(ball.position.x<-halfWidth){ball.position.x=-halfWidth; ballVelocity.x*=-0.5;}
+  if(ball.position.x>halfWidth){ball.position.x=halfWidth; ballVelocity.x*=-0.5;}
 }
 
 function checkGoal(){
-  if(ball.position.z>25-0.5 && Math.abs(ball.position.x)<3){ scoreA++; resetPositions(); }
-  if(ball.position.z<-25+0.5 && Math.abs(ball.position.x)<3){ scoreB++; resetPositions(); }
+  if(ball.position.z>terrainSize.height/2-0.5 && Math.abs(ball.position.x)<3){ scoreA++; resetPositions(); }
+  if(ball.position.z<-terrainSize.height/2+0.5 && Math.abs(ball.position.x)<3){ scoreB++; resetPositions(); }
   document.getElementById("scoreboard").innerText=`Équipe A: ${scoreA} | Équipe B: ${scoreB} | Temps: ${time}s`;
 }
 
