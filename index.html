@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Mini Foot avec cages</title>
+<title>Mini Foot - Ballon au sol</title>
 <style>
 body { margin:0; overflow:hidden; font-family:sans-serif; }
 #menu { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -61,7 +61,7 @@ function init(){
   const ballGeo=new THREE.SphereGeometry(0.5,32,32);
   const ballMat=new THREE.MeshPhongMaterial({color:0xffffff});
   ball=new THREE.Mesh(ballGeo,ballMat);
-  ball.position.y=0.5;
+  ball.position.y=0.5; // ballon toujours au sol
   scene.add(ball);
 
   // Joueur principal
@@ -97,15 +97,6 @@ function init(){
   goalB.position.set(0,goalHeight/2,terrainSize.height/2);
   scene.add(goalB);
 
-  // Murs invisibles (bords terrain)
-  const wallThickness=1, wallHeight=5;
-  const wallMat=new THREE.MeshBasicMaterial({visible:false});
-  // Côtés gauche/droite
-  const wallLeft=new THREE.Mesh(new THREE.BoxGeometry(wallThickness,wallHeight,terrainSize.height),wallMat);
-  wallLeft.position.set(-terrainSize.width/2, wallHeight/2,0); scene.add(wallLeft);
-  const wallRight=new THREE.Mesh(new THREE.BoxGeometry(wallThickness,wallHeight,terrainSize.height),wallMat);
-  wallRight.position.set(terrainSize.width/2, wallHeight/2,0); scene.add(wallRight);
-
   // Event clavier
   document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
   document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
@@ -132,12 +123,24 @@ function collide(player){
 function moveBall(){
   ball.position.add(ballVelocity);
   ballVelocity.multiplyScalar(0.95);
-  if(ball.position.y<0.5){ ball.position.y=0.5; ballVelocity.y=0; }
+  ball.position.y=0.5; // ballon toujours au sol
 
-  // Limites murs invisibles
+  // Limites murs invisibles pour le ballon
   const halfWidth=terrainSize.width/2-0.5;
+  const halfHeight=terrainSize.height/2-0.5;
   if(ball.position.x<-halfWidth){ball.position.x=-halfWidth; ballVelocity.x*=-0.5;}
   if(ball.position.x>halfWidth){ball.position.x=halfWidth; ballVelocity.x*=-0.5;}
+  if(ball.position.z<-halfHeight){ball.position.z=-halfHeight; ballVelocity.z*=-0.5;}
+  if(ball.position.z>halfHeight){ball.position.z=halfHeight; ballVelocity.z*=-0.5;}
+}
+
+function constrainPlayer(player){
+  const halfWidth=terrainSize.width/2-0.5;
+  const halfHeight=terrainSize.height/2-0.5;
+  if(player.position.x<-halfWidth) player.position.x=-halfWidth;
+  if(player.position.x>halfWidth) player.position.x=halfWidth;
+  if(player.position.z<-halfHeight) player.position.z=-halfHeight;
+  if(player.position.z>halfHeight) player.position.z=halfHeight;
 }
 
 function checkGoal(){
@@ -165,11 +168,14 @@ function animate(){
   if(keys['s']) player.position.z+=0.2;
   if(keys['q']) player.position.x-=0.2;
   if(keys['d']) player.position.x+=0.2;
-  if(keys[' ']) ballVelocity.y+=0.2;
+  if(keys[' ']) ballVelocity.z+=0.3; // frappe au sol
+
+  // Contrainte joueur
+  constrainPlayer(player);
 
   // IA
-  teamA.forEach(p=>moveAI(p));
-  teamB.forEach(p=>moveAI(p));
+  teamA.forEach(p=>{moveAI(p); constrainPlayer(p);});
+  teamB.forEach(p=>{moveAI(p); constrainPlayer(p);});
 
   // Collisions
   [...teamA,...teamB,player].forEach(p=>collide(p));
