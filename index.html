@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mini FIFA 3D Ultime</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: sans-serif; touch-action: none; }
+  #scoreboard {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    color: white; font-size: 24px; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px;
+  }
+  #menu {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: white; font-size: 28px; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; text-align: center;
+  }
+  #menu button { font-size: 20px; padding: 10px 20px; margin-top: 10px; cursor: pointer; }
+
+  /* Boutons mobile */
+  #mobileControls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; }
+  #joystick { width: 100px; height: 100px; background: rgba(255,255,255,0.3); border-radius: 50%; touch-action: none; position: relative; }
+  #joystickThumb { width: 40px; height: 40px; background: rgba(255,255,255,0.7); border-radius: 50%; position: absolute; left: 30px; top: 30px; }
+  #shootBtn { width: 80px; height: 80px; background: rgba(255,0,0,0.5); border-radius: 50%; font-size: 24px; display:flex; align-items:center; justify-content:center; user-select:none; }
+</style>
+</head>
+<body>
+<div id="menu">
+  <div>Mini FIFA 3D</div>
+  <button id="startBtn">Démarrer le match</button>
+</div>
+<div id="scoreboard" style="display:none;">Équipe A: 0 | Équipe B: 0 | Temps: 0s</div>
+<div id="mobileControls" style="display:none;">
+  <div id="joystick"><div id="joystickThumb"></div></div>
+  <div id="shootBtn">TIR</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script>
+// === VARIABLES GLOBALES ===
+let scene, camera, renderer;
+let terrain, ball, ballVelocity;
+let teamA=[], teamB=[];
+let scoreA=0, scoreB=0, time=0;
+let keys = {};
+let lastTime = Date.now();
+let gameRunning = false;
+let audioGoal, audioHit;
+
+// Mobile joystick
+let joystick = { x:0, y:0 };
+
+// === INITIALISATION DU JEU ===
+function init(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87CEEB);
+
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 20, 25);
+
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Lumière
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(10,20,10);
+  scene.add(light);
+  scene.add(new THREE.AmbientLight(0x404040));
+
+  // Terrain
+  const terrainGeometry = new THREE.PlaneGeometry(30,50);
+  const terrainMaterial = new THREE.MeshPhongMaterial({color:0x228B22});
+  terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+  terrain.rotation.x = -Math.PI/2;
+  scene.add(terrain);
+
+  // Ballon
+  const ballGeometry = new THREE.SphereGeometry(0.5,32,32);
+  const ballMaterial = new THREE.MeshPhongMaterial({color:0xffffff});
+  ball = new THREE.Mesh(ballGeometry, ballMaterial);
+  ball.position.y = 0.5;
+  scene.add(ball);
+  ballVelocity = new THREE.Vector3(0,0,0);
+
+  // Buts
+  const goalWidth = 6, goalDepth = 1;
+  const goalMaterial = new THREE.MeshBasicMaterial({color:0xff0000});
+  const goalA = new THREE.Mesh(new THREE.BoxGeometry(goalWidth,2,goalDepth), goalMaterial);
+  goalA.position.set(0,1,-25);
+  scene.add(goalA);
+  const goalB = new THREE.Mesh(new THREE.BoxGeometry(goalWidth,2,goalDepth), goalMaterial);
+  goalB.position.set(0,1,25);
+  scene.add(goalB);
+
+  // Joueurs
+  const playerGeometry = new THREE.BoxGeometry(1,2,1);
+  const teamAColor = 0x0000ff;
+  const teamBColor = 0xffd700;
+  for(let i=0;i<3;i++){
+    const playerA = new THREE.Mesh(playerGeometry, new THREE.MeshPhongMaterial({color:teamAColor}));
+    playerA.position.set(-5+i*5,1,10);
+    scene.add(playerA);
+    teamA.push(playerA);
+
+    const playerB = new THREE.Mesh(playerGeometry, new THREE.MeshPhongMaterial({color:teamBColor}));
+    playerB.position.set(-5+i*5,1,-10);
+    scene.add(playerB);
+    teamB.push(playerB);
+  }
+
+  // Audio
+  audioGoal = new Audio("https://www.soundjay.com/soccer/goal-1.mp3");
+  audioHit = new Audio("https://www.soundjay.com/soccer/kick-1.mp3");
+
+  // Clavier
+  document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+  document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+  // Clic gauche pour tirer
+  document.addEventListener('mousedown', e=>{
+    if(e.button===0){ ballVelocity.y += 0.2; } // bouton gauche
+  });
+
+  // Joystick mobile
+  const joystickDiv = document.getElementById("joystick");
+  const thumb = document.getElementById("joystickThumb");
+  let active = false, startX=0, startY=0;
+  joystickDiv.addEventListener("touchstart", e=>{
+    active=true; const t=e.touches[0]; startX=t.clientX; startY=t.clientY;
+  });
+  joystickDiv.addEventListener("touchmove", e=>{
+    if(!active) return;
+    const t=e.touches[0];
+    let dx = t.clientX-startX; let dy=t.clientY-startY;
+    dx=Math.max(-50, Math.min(50, dx)); dy=Math.max(-50, Math.min(50, dy));
+    thumb.style.transform = `translate(${dx}px, ${dy}px)`;
+    joystick.x = dx/50; joystick.y = -dy/50;
+  });
+  joystickDiv.addEventListener("touchend", e=>{
+    active=false; thumb.style.transform="translate(0px,0px)";
+    joystick.x=0; joystick.y=0;
+  });
+
+  // Bouton tir mobile
+  document.getElementById("shootBtn").addEventListener("touchstart", e=>{
+    ballVelocity.y+=0.2;
+  });
+
+  // Gamepad
+  window.addEventListener("gamepadconnected", e=>{
+    console.log("Manette connectée:", e.gamepad.id);
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// === FONCTIONS ===
+function moveAI(player){
+  const dir = new THREE.Vector3(ball.position.x - player.position.x,0,ball.position.z - player.position.z);
+  dir.clampLength(0,0.1);
+  player.position.add(dir);
+  player.position.y = 1 + Math.sin(Date.now()*0.01)*0.1;
+}
+
+function collide(player){
+  const dir = new THREE.Vector3().subVectors(ball.position, player.position);
+  const dist = dir.length();
+  if(dist < 1.2){
+    dir.normalize().multiplyScalar(0.3);
+    ballVelocity.add(dir);
+    audioHit.currentTime=0; audioHit.play();
+  }
+}
+
+function moveBall(){
+  ball.position.add(ballVelocity);
+  ballVelocity.multiplyScalar(0.95);
+  if(ball.position.y<0.5){ ball.position.y=0.5; ballVelocity.y=0; }
+}
+
+function checkGoal(){
+  if(ball.position.z>25-0.5 && Math.abs(ball.position.x)<3){ scoreA++; audioGoal.play(); resetPositions(); }
+  if(ball.position.z<-25+0.5 && Math.abs(ball.position.x)<3){ scoreB++; audioGoal.play(); resetPositions(); }
+  document.getElementById("scoreboard").innerText = `Équipe A: ${scoreA} | Équipe B: ${scoreB} | Temps: ${time}s`;
+}
+
+function resetPositions(){
+  ball.position.set(0,0.5,0); ballVelocity.set(0,0,0);
+  teamA[0].position.set(-5,1,10); teamA[1].position.set(0,1,10); teamA[2].position.set(5,1,10);
+  teamB[0].position.set(-5,1,-10); teamB[1].position.set(0,1,-10); teamB[2].position.set(5,1,-10);
+}
+
+// === ANIMATION PRINCIPALE ===
+function animate(){
+  if(!gameRunning) return;
+  requestAnimationFrame(animate);
+
+  const now = Date.now();
+  if(now - lastTime > 1000){ time++; lastTime = now; }
+
+  const player = teamA[0];
+
+  // Clavier ZQSD
+  if(keys['z']) ballVelocity.z -= 0.2;
+  if(keys['s']) ballVelocity.z += 0.2;
+  if(keys['q']) ballVelocity.x -= 0.2;
+  if(keys['d']) ballVelocity.x += 0.2;
+  if(keys[' ']) ballVelocity.y += 0.2;
+
+  // Joystick mobile
+  ballVelocity.x += joystick.x*0.2;
+  ballVelocity.z += joystick.y*0.2;
+
+  // Gamepad
+  const gp = navigator.getGamepads()[0];
+  if(gp){
+    ballVelocity.x += gp.axes[0]*0.2;
+    ballVelocity.z += -gp.axes[1]*0.2;
+    if(gp.buttons[0].pressed) ballVelocity.y+=0.2; // bouton A
+  }
+
+  // IA coéquipiers
+  teamA.slice(1).forEach(p => moveAI(p));
+  // IA adversaires
+  teamB.forEach(p => moveAI(p));
+
+  // Collision
+  [...teamA,...teamB].forEach(p => collide(p));
+
+  moveBall();
+  checkGoal();
+
+  // Caméra suit ballon
+  camera.position.lerp(new THREE.Vector3(ball.position.x, 20, ball.position.z+25), 0.05);
+  camera.lookAt(ball.position);
+
+  renderer.render(scene, camera);
+}
+
+// Démarrage du match
+document.getElementById("startBtn").onclick = ()=>{
+  document.getElementById("menu").style.display="none";
+  document.getElementById("scoreboard").style.display="block";
+  document.getElementById("mobileControls").style.display="flex";
+  gameRunning = true;
+  init();
+  animate();
+};
+</script>
+</body>
+</html>
